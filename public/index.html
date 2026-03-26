@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Show do Milhão AI</title>
+    <style>
+        :root {
+            --dark-blue: #000839;
+            --electric-blue: #0050ac;
+            --gold: #ffd700;
+            --white: #ffffff;
+        }
+
+        body {
+            background: radial-gradient(circle, var(--electric-blue) 0%, var(--dark-blue) 100%);
+            color: var(--white);
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            overflow: hidden;
+        }
+
+        .game-container {
+            width: 90%;
+            max-width: 800px;
+            text-align: center;
+        }
+
+        .prize-board {
+            font-size: 1.5rem;
+            font-weight: bold;
+            color: var(--gold);
+            margin-bottom: 20px;
+            text-shadow: 2px 2px 4px #000;
+        }
+
+        .question-box {
+            background: rgba(0, 0, 0, 0.7);
+            border: 3px solid var(--gold);
+            padding: 30px;
+            border-radius: 50px;
+            margin-bottom: 30px;
+            box-shadow: 0 0 20px var(--gold);
+        }
+
+        .options-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+        }
+
+        .help-btn {
+            background: #444;
+            color: white;
+            border: 1px solid var(--gold);
+            padding: 10px 20px;
+            border-radius: 10px;
+            cursor: pointer;
+            margin: 5px;
+        }
+
+        .help-btn:disabled {
+            opacity: 0.3;
+            cursor: not-allowed;
+        }
+
+        .option-btn {
+            background: linear-gradient(to right, #001f4d, #004080);
+            border: 2px solid var(--white);
+            color: white;
+            padding: 15px;
+            border-radius: 30px;
+            cursor: pointer;
+            font-size: 1.1rem;
+            transition: 0.3s;
+            text-align: left;
+        }
+
+        .option-btn:hover {
+            background: var(--gold);
+            color: var(--dark-blue);
+            border-color: var(--dark-blue);
+        }
+
+        .option-btn.selected {
+            background: var(--gold);
+            color: var(--dark-blue);
+        }
+
+        .option-btn.correct {
+            background: #28a745 !important;
+            color: white;
+        }
+
+        .option-btn.wrong {
+            background: #dc3545 !important;
+            color: white;
+        }
+
+        .controls {
+            margin-top: 30px;
+        }
+
+        button#confirm-btn {
+            background: var(--gold);
+            border: none;
+            padding: 15px 40px;
+            border-radius: 20px;
+            font-weight: bold;
+            cursor: pointer;
+            text-transform: uppercase;
+        }
+
+        #loading {
+            display: none;
+            color: var(--gold);
+            font-style: italic;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="game-container">
+        <div class="prize-board">Prêmio Atual: R$ <span id="money">0</span></div>
+
+        <div id="loading">Consultando os universitários...</div>
+
+        <div id="game-ui">
+            <div class="question-box">
+                <h2 id="question-text">Clique em "Começar" para gerar uma pergunta!</h2>
+            </div>
+
+            <div class="options-grid" id="options-container">
+            </div>
+
+            <div class="controls">
+                <button id="confirm-btn" onclick="startGame()">Começar Jogo</button>
+                <div id="help-section" style="display:none; margin-top: 20px;">
+                    <button class="help-btn" id="btn-pular" onclick="pularPergunta()">Pular (<span
+                            id="pulos-count">3</span>)</button>
+                    <button class="help-btn" id="btn-ajuda" onclick="pedirAjuda()">Universitários</button>
+                </div>
+            </div>
+            <div id="hint-display" style="margin-top: 20px; color: #ffd700; font-style: italic;"></div>
+        </div>
+
+        <script>
+            let perguntaAtual = null;
+            let premio = 0;
+            const patamares = [1000, 5000, 10000, 50000, 100000, 500000, 1000000];
+            let nivel = 0;
+            let pulosRestantes = 3;
+            let ajudaUsada = false;
+
+            async function fetchPergunta() {
+                document.getElementById('loading').style.display = 'block';
+                document.getElementById('hint-display').innerText = ''; // Limpa dica anterior
+
+                try {
+                    const res = await fetch('/pergunta');
+                    perguntaAtual = await res.json();
+                    renderPergunta();
+
+                    // Mostrar botões de ajuda
+                    document.getElementById('help-section').style.display = 'block';
+                    atualizarBotoesAjuda();
+                } catch (err) {
+                    alert("Erro ao chamar o Gemini!");
+                } finally {
+                    document.getElementById('loading').style.display = 'none';
+                }
+            }
+
+            async function pedirAjuda() {
+                if (ajudaUsada) return;
+
+                document.getElementById('hint-display').innerText = "Consultando universitários...";
+                const btn = document.getElementById('btn-ajuda');
+                btn.disabled = true;
+
+                const res = await fetch('/ajuda', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        enunciado: perguntaAtual.enunciado,
+                        alternativas: perguntaAtual.alternativas
+                    })
+                });
+
+                const data = await res.json();
+                document.getElementById('hint-display').innerText = `💡 Universitários dizem: ${data.dica}`;
+                ajudaUsada = true;
+            }
+
+            function pularPergunta() {
+                if (pulosRestantes > 0) {
+                    pulosRestantes--;
+                    document.getElementById('pulos-count').innerText = pulosRestantes;
+                    ajudaUsada = false; // Reseta ajuda para a próxima pergunta
+                    fetchPergunta();
+                }
+            }
+
+            function atualizarBotoesAjuda() {
+                document.getElementById('btn-pular').disabled = pulosRestantes === 0;
+                document.getElementById('btn-ajuda').disabled = ajudaUsada;
+            }
+
+
+            function renderPergunta() {
+                document.getElementById('question-text').innerText = perguntaAtual.enunciado;
+                const container = document.getElementById('options-container');
+                container.innerHTML = '';
+
+                for (const [letra, texto] of Object.entries(perguntaAtual.alternativas)) {
+                    const btn = document.createElement('button');
+                    btn.className = 'option-btn';
+                    btn.innerHTML = `<strong>${letra.toUpperCase()}:</strong> ${texto}`;
+                    btn.onclick = () => selectOption(btn, letra);
+                    container.appendChild(btn);
+                }
+
+                const mainBtn = document.getElementById('confirm-btn');
+                mainBtn.innerText = "Confirmar Resposta";
+                mainBtn.onclick = checkAnswer;
+                mainBtn.disabled = true;
+            }
+
+            let selectedLetra = null;
+            function selectOption(btn, letra) {
+                document.querySelectorAll('.option-btn').forEach(b => b.classList.remove('selected'));
+                btn.classList.add('selected');
+                selectedLetra = letra;
+                document.getElementById('confirm-btn').disabled = false;
+            }
+
+            function checkAnswer() {
+                const correta = perguntaAtual.correta.toLowerCase().trim();
+                const botoes = document.querySelectorAll('.option-btn');
+
+                if (selectedLetra === correta) {
+                    premio = patamares[nivel];
+                    document.getElementById('money').innerText = premio.toLocaleString('pt-BR');
+                    nivel++;
+                    alert("VOCÊ ACERTOU! " + perguntaAtual.dica_do_universitario);
+
+                    if (nivel < patamares.length) {
+                        fetchPergunta();
+                    } else {
+                        alert("PARABÉNS! VOCÊ É O NOVO MILIONÁRIO!");
+                        location.reload();
+                    }
+                } else {
+                    alert("QUE PENA! Você errou. A correta era: " + correta.toUpperCase());
+                    location.reload();
+                }
+            }
+
+            function startGame() {
+                fetchPergunta();
+            }
+        </script>
+
+</body>
+
+</html>
